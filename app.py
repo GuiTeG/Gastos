@@ -6,17 +6,18 @@ from google.oauth2.service_account import Credentials
 from pagina_dashboard import pagina_dashboard
 from datetime import date
 
-# Função para normalizar valor de entrada (string -> float seguro BR)
 def normaliza_valor(valor_str):
-    valor_str = str(valor_str).strip()
-    # Milhar e decimal brasileiro: 1.234,56 -> 1234.56
+    """
+    Garante conversão correta para float (aceita milhar, vírgula, ponto, espaços e float puro).
+    """
+    if valor_str is None:
+        return 0.0
+    valor_str = str(valor_str).replace(" ", "").replace(" ", "").strip()
     if "." in valor_str and "," in valor_str:
-        valor_str = valor_str.replace(".", "")  # remove milhar
-        valor_str = valor_str.replace(",", ".") # troca decimal
-    # Só vírgula: 14,98 -> 14.98
+        valor_str = valor_str.replace(".", "")
+        valor_str = valor_str.replace(",", ".")
     elif "," in valor_str:
         valor_str = valor_str.replace(",", ".")
-    # Só ponto: 14.98 (ok)
     return valor_str
 
 SCOPE = [
@@ -42,11 +43,17 @@ worksheet = sheet.worksheet(WORKSHEET_NAME)
 
 def ler_transacoes():
     rows = worksheet.get_all_records()
+    for row in rows:
+        try:
+            # Sempre normalize e converta, independente do que veio
+            row["Valor"] = float(normaliza_valor(row["Valor"]))
+        except Exception:
+            row["Valor"] = 0.0
     return rows if rows else []
 
 def adicionar_transacao(data, descricao, valor, categoria, tipo):
-    # valor já é float!
-    valor_final = valor if tipo == "Entrada" else -valor
+    # SEMPRE salva valor como float com ponto (ex: 14.98)
+    valor_final = float(valor) if tipo == "Entrada" else -float(valor)
     worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
 
 def remover_transacao(row_dict):
@@ -92,10 +99,6 @@ if "pagina" not in st.session_state:
 st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
-
-# Sempre converta o campo Valor lido para float com normalização
-if not df_total.empty:
-    df_total["Valor"] = df_total["Valor"].apply(lambda x: float(normaliza_valor(x)))
 
 valores_numericos = df_total["Valor"] if not df_total.empty else pd.Series(dtype="float")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
@@ -154,8 +157,7 @@ with col_dir:
         st.header("📋 Histórico de Transações")
         if st.session_state.transacoes:
             df = pd.DataFrame(st.session_state.transacoes, columns=cols)
-            if not df.empty:
-                df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
+            df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
             df["Data"] = pd.to_datetime(df["Data"])
             df = df.sort_values(by="Data", ascending=False).reset_index(drop=True)
             busca = st.text_input("🔎 Buscar por descrição ou categoria")
@@ -173,8 +175,7 @@ with col_dir:
             st.info("Nenhuma transação cadastrada para remover.")
         else:
             df = pd.DataFrame(st.session_state.transacoes, columns=cols)
-            if not df.empty:
-                df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
+            df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
             df["Data"] = pd.to_datetime(df["Data"])
             df = df.sort_values(by="Data", ascending=False).reset_index(drop=True)
             for i, row in df.iterrows():
