@@ -131,16 +131,28 @@ def pagina_dashboard():
         st.caption(f"Maior despesa: {tx_mais_cara['Descrição']} - {formatar_brl(tx_mais_cara['ValorAbs'])} em {tx_mais_cara['Data'].strftime('%d/%m/%Y')}")
 
     # Gastos por dia da semana
-    st.subheader("Gastos por Dia da Semana (Mês Atual)")
     if not df_mes[df_mes["Valor"]<0].empty:
-        df_mes["DiaSemana"] = df_mes["Data"].dt.day_name(locale="pt_BR")
-        fig_semana = px.bar(
-            df_mes[df_mes["Valor"]<0],
-            x="DiaSemana", y="Valor", color="Categoria",
-            title="Gastos por Dia da Semana",
-            labels={"Valor": "Valor (R$)"}
-        )
-        st.plotly_chart(fig_semana, use_container_width=True)
+    # Pegando nome dos dias em inglês
+     df_mes["DiaSemana"] = df_mes["Data"].dt.day_name()
+    # Traduzindo manualmente para português
+    dias_semana = {
+        'Monday': 'Segunda',
+        'Tuesday': 'Terça',
+        'Wednesday': 'Quarta',
+        'Thursday': 'Quinta',
+        'Friday': 'Sexta',
+        'Saturday': 'Sábado',
+        'Sunday': 'Domingo'
+    }
+    df_mes["DiaSemana"] = df_mes["DiaSemana"].map(dias_semana)
+    fig_semana = px.bar(
+        df_mes[df_mes["Valor"]<0],
+        x="DiaSemana", y="Valor", color="Categoria",
+        title="Gastos por Dia da Semana",
+        labels={"Valor": "Valor (R$)"}
+    )
+    st.plotly_chart(fig_semana, use_container_width=True)
+
 
     # Outros indicadores rápidos
     st.markdown("#### Outros Indicadores")

@@ -1,42 +1,64 @@
 import streamlit as st
 import pandas as pd
-from pagina_dashboard import pagina_dashboard
-from datetime import date, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
+from pagina_dashboard import pagina_dashboard  # Se você tem um dashboard separado
+from datetime import date
 
-st.set_page_config(page_title="Controle de Finanças", layout="wide")
+# ------ Google Sheets Config ------
+SCOPE = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+creds = Credentials.from_service_account_file('credenciais.json', scopes=SCOPE)
+gc = gspread.authorize(creds)
+SHEET_NAME = 'Controle finanças'  # Igual ao nome da sua planilha no Google Sheets
+WORKSHEET_NAME = 'Transacoes'      # Igual ao nome da aba
+sheet = gc.open(SHEET_NAME)
+worksheet = sheet.worksheet(WORKSHEET_NAME)
+
+def ler_transacoes():
+    rows = worksheet.get_all_records()
+    return rows if rows else []
+
+def adicionar_transacao(data, descricao, valor, categoria, tipo):
+    valor_final = valor if tipo == "Entrada" else -valor
+    worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
 
 def formatar_brl(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+st.set_page_config(page_title="Controle de Finanças", layout="wide")
+
 if "categorias" not in st.session_state:
     st.session_state.categorias = ["Salário", "Alimentação", "Transporte", "Lazer", "Gastos Fixos", "Outros"]
-if "transacoes" not in st.session_state:
-    st.session_state.transacoes = []
 if "pagina" not in st.session_state:
     st.session_state.pagina = "principal"
 
-# --- KPIs ---
+# Sempre atualiza transacoes lendo do Sheets
+st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
-total_entrada = df_total[df_total["Valor"] > 0]["Valor"].sum() if not df_total.empty else 0
-total_saida = df_total[df_total["Valor"] < 0]["Valor"].sum() if not df_total.empty else 0
-saldo = df_total["Valor"].sum() if not df_total.empty else 0
 
-# --- LAYOUT: 2 colunas (menu/kpi | formulário) ---
+# -- Totais seguros com tratamento de texto/float
+valores_numericos = pd.to_numeric(df_total["Valor"], errors="coerce")
+total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
+total_saida = valores_numericos[valores_numericos < 0].sum() if not df_total.empty else 0
+saldo = valores_numericos.sum() if not df_total.empty else 0
+
 col_esq, col_dir = st.columns([1, 3], gap="large")
 
 with col_esq:
-    # --- MENU lateral: só botões simples padrão Streamlit ---
-    if  st.button("🏠 Principal"):
+    if st.button("🏠 Principal"):
         st.session_state.pagina = "principal"
         st.rerun()
-    if  st.button("📋 Histórico"):
+    if st.button("📋 Histórico"):
         st.session_state.pagina = "historico"
         st.rerun()
-    if  st.button("🗑️ Remover"):
+    if st.button("🗑️ Remover"):
         st.session_state.pagina = "remover"
         st.rerun()
-    if  st.button("📊 Dashboard"):
+    if st.button("📊 Dashboard"):
         st.session_state.pagina = "dashboard"
         st.rerun()
 
@@ -62,15 +84,10 @@ with col_dir:
                 elif valor <= 0:
                     st.warning("Valor deve ser maior que zero.")
                 else:
-                    st.session_state.transacoes.append({
-                        "Data": data,
-                        "Descrição": descricao,
-                        "Valor": valor if tipo == "Entrada" else -valor,
-                        "Categoria": categoria,
-                        "Tipo": tipo
-                    })
+                    adicionar_transacao(data, descricao, valor, categoria, tipo)
                     st.success("✨ Transação registrada com sucesso!")
                     st.rerun()
+
     elif st.session_state.pagina == "historico":
         st.header("📋 Histórico de Transações")
         if st.session_state.transacoes:
@@ -85,6 +102,7 @@ with col_dir:
             st.dataframe(df_filtrado, use_container_width=True)
         else:
             st.info("Nenhuma transação cadastrada.")
+
     elif st.session_state.pagina == "remover":
         st.header("🗑️ Remover Transação")
         if not st.session_state.transacoes:
@@ -99,15 +117,10 @@ with col_dir:
                     st.write(f"{row['Data'].strftime('%d/%m/%Y')} | {row['Descrição']} | {row['Categoria']} | {formatar_brl(row['Valor'])}")
                 with col2:
                     if st.button("Remover", key=f"remove_{i}_{row['Data']}_{row['Descrição']}"):
-                        for idx, item in enumerate(st.session_state.transacoes):
-                            if (item['Data'] == row['Data'].date() and 
-                                item['Descrição'] == row['Descrição'] and 
-                                item['Valor'] == row['Valor'] and
-                                item['Categoria'] == row['Categoria'] and
-                                item['Tipo'] == row['Tipo']):
-                                st.session_state.transacoes.pop(idx)
-                                st.success("Transação removida com sucesso!")
-                                st.rerun()
-                                break
+                        # Remove pela linha real do Sheets!
+                        worksheet.delete_rows(i + 2)  # +2 pois começa do 2 (linha 1 é header, DataFrame é 0-based)
+                        st.success("Transação removida com sucesso!")
+                        st.rerun()
+
     elif st.session_state.pagina == "dashboard":
-                          pagina_dashboard()
+        pagina_dashboard()
