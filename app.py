@@ -1,19 +1,31 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import json
 from google.oauth2.service_account import Credentials
-from pagina_dashboard import pagina_dashboard  # Se você tem um dashboard separado
+from pagina_dashboard import pagina_dashboard
 from datetime import date
 
-# ------ Google Sheets Config ------
 SCOPE = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
 ]
-creds = Credentials.from_service_account_file('credenciais.json', scopes=SCOPE)
+
+# LEITURA SEGURA DAS CREDENCIAIS
+if "google_service_account" in st.secrets:
+    # Se colou o JSON entre ''' ... ''' no secrets, faça:
+    try:
+        service_account_info = json.loads(st.secrets["google_service_account"])
+    except Exception:
+        # Se colou em TOML, já está como dict!
+        service_account_info = dict(st.secrets["google_service_account"])
+    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPE)
+else:
+    creds = Credentials.from_service_account_file('credenciais.json', scopes=SCOPE)
+
 gc = gspread.authorize(creds)
-SHEET_NAME = 'Controle finanças'  # Igual ao nome da sua planilha no Google Sheets
-WORKSHEET_NAME = 'Transacoes'      # Igual ao nome da aba
+SHEET_NAME = 'Controle finanças'
+WORKSHEET_NAME = 'Transacoes'
 sheet = gc.open(SHEET_NAME)
 worksheet = sheet.worksheet(WORKSHEET_NAME)
 
@@ -24,6 +36,35 @@ def ler_transacoes():
 def adicionar_transacao(data, descricao, valor, categoria, tipo):
     valor_final = valor if tipo == "Entrada" else -valor
     worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
+
+def remover_transacao(row_dict):
+    all_rows = worksheet.get_all_records()
+    idx = None
+    for i, row in enumerate(all_rows, start=2):  # começa em 2 porque 1 é header
+        try:
+            data1 = str(row.get("Data"))
+            data2 = str(row_dict.get("Data"))
+            desc1 = str(row.get("Descrição"))
+            desc2 = str(row_dict.get("Descrição"))
+            cat1 = str(row.get("Categoria"))
+            cat2 = str(row_dict.get("Categoria"))
+            tipo1 = str(row.get("Tipo"))
+            tipo2 = str(row_dict.get("Tipo"))
+            val1 = float(str(row.get("Valor")).replace(",", "."))
+            val2 = float(str(row_dict.get("Valor")).replace(",", "."))
+            if (
+                data1 == data2 and
+                desc1 == desc2 and
+                cat1 == cat2 and
+                tipo1 == tipo2 and
+                val1 == val2
+            ):
+                idx = i
+                break
+        except Exception:
+            continue
+    if idx:
+        worksheet.delete_rows(idx)
 
 def formatar_brl(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -40,7 +81,6 @@ st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
 
-# -- Totais seguros com tratamento de texto/float
 valores_numericos = pd.to_numeric(df_total["Valor"], errors="coerce")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
 total_saida = valores_numericos[valores_numericos < 0].sum() if not df_total.empty else 0
@@ -117,8 +157,7 @@ with col_dir:
                     st.write(f"{row['Data'].strftime('%d/%m/%Y')} | {row['Descrição']} | {row['Categoria']} | {formatar_brl(row['Valor'])}")
                 with col2:
                     if st.button("Remover", key=f"remove_{i}_{row['Data']}_{row['Descrição']}"):
-                        # Remove pela linha real do Sheets!
-                        worksheet.delete_rows(i + 2)  # +2 pois começa do 2 (linha 1 é header, DataFrame é 0-based)
+                        remover_transacao(row)
                         st.success("Transação removida com sucesso!")
                         st.rerun()
 
