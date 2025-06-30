@@ -112,11 +112,17 @@ with col_dir:
         with st.form("form_transacao"):
             data = st.date_input("Data de Pagamento", value=date.today(), format="DD/MM/YYYY")
             descricao = st.text_input("Descrição", placeholder="Ex: Mercado, Uber, Conta de luz...")
-            valor = st.number_input("Valor (R$)", min_value=0.01, step=0.01, format="%.2f")
+            valor_str = st.text_input("Valor (R$)", placeholder="Ex: 14,98 ou 14.98")
             categoria = st.selectbox("Categoria", st.session_state.categorias)
             tipo = st.radio("Tipo", ["Entrada", "Saída"], horizontal=True)
             enviar = st.form_submit_button("Adicionar")
             if enviar:
+                valor_str = valor_str.replace(",", ".").strip()
+                try:
+                    valor = float(valor_str)
+                except Exception:
+                    st.warning("Digite um valor numérico válido, usando vírgula ou ponto como decimal.")
+                    st.stop()
                 if not descricao:
                     st.warning("Preencha a descrição da transação.")
                 elif valor <= 0:
