@@ -44,8 +44,11 @@ def ler_transacoes():
     return rows if rows else []
 
 def adicionar_transacao(data, descricao, valor, categoria, tipo):
-    valor_final = valor if tipo == "Entrada" else -valor
+    # valor aqui já é float!
+    valor_float = float(str(valor).replace(",", "."))
+    valor_final = valor_float if tipo == "Entrada" else -valor_float
     worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
+
 
 def remover_transacao(row_dict):
     all_rows = worksheet.get_all_records()
@@ -60,8 +63,8 @@ def remover_transacao(row_dict):
             cat2 = str(row_dict.get("Categoria")).strip()
             tipo1 = str(row.get("Tipo")).strip()
             tipo2 = str(row_dict.get("Tipo")).strip()
-            val1 = float(str(row.get("Valor")).replace(",", "."))
-            val2 = float(str(row_dict.get("Valor")).replace(",", "."))
+            val1 = float(str(row.get("Valor")).replace(",", ".").replace(" ", ""))
+            val2 = float(str(row_dict.get("Valor")).replace(",", ".").replace(" ", ""))
             if (
                 data1 == data2 and
                 desc1 == desc2 and
@@ -75,6 +78,7 @@ def remover_transacao(row_dict):
             continue
     if idx:
         worksheet.delete_rows(idx)
+
 
 def formatar_brl(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -90,6 +94,8 @@ if "pagina" not in st.session_state:
 st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
+st.write(df_total["Valor"].head(10))
+
 
 valores_numericos = pd.to_numeric(df_total["Valor"], errors="coerce")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
