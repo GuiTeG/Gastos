@@ -6,6 +6,8 @@ from google.oauth2.service_account import Credentials
 from pagina_dashboard import pagina_dashboard
 from datetime import date
 
+
+
 def normaliza_valor(valor_str):
     """
     Garante conversão correta para float (aceita milhar, vírgula, ponto, espaços e float puro).
@@ -99,6 +101,8 @@ if "pagina" not in st.session_state:
 st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
+
+st.write(df_total)
 
 valores_numericos = df_total["Valor"] if not df_total.empty else pd.Series(dtype="float")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
