@@ -114,8 +114,6 @@ st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
 
-st.write(df_total)
-
 valores_numericos = df_total["Valor"] if not df_total.empty else pd.Series(dtype="float")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
 total_saida = valores_numericos[valores_numericos < 0].sum() if not df_total.empty else 0
