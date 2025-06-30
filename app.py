@@ -9,18 +9,17 @@ from datetime import date
 
 
 def normaliza_valor(valor_str):
-    """
-    Garante conversão correta para float (aceita milhar, vírgula, ponto, espaços e float puro).
-    """
     if valor_str is None:
         return 0.0
     valor_str = str(valor_str).replace(" ", "").replace(" ", "").strip()
+    # Se vier tipo 1.234,56 => 1234.56
     if "." in valor_str and "," in valor_str:
         valor_str = valor_str.replace(".", "")
         valor_str = valor_str.replace(",", ".")
     elif "," in valor_str:
         valor_str = valor_str.replace(",", ".")
-    return valor_str
+    return float(valor_str)
+
 
 SCOPE = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -54,9 +53,22 @@ def ler_transacoes():
     return rows if rows else []
 
 def adicionar_transacao(data, descricao, valor, categoria, tipo):
-    # SEMPRE salva valor como float com ponto (ex: 14.98)
-    valor_final = float(valor) if tipo == "Entrada" else -float(valor)
-    worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
+    # valor chega como float! Garanta sempre ponto decimal
+    valor_final = valor if tipo == "Entrada" else -valor
+    # Formata para string SEM vírgula, SEM milhar
+    valor_final_str = "{:.2f}".format(valor_final).replace(",", ".")
+    worksheet.append_row([str(data), descricao, valor_final_str, categoria, tipo])
+
+def ler_transacoes():
+    rows = worksheet.get_all_records()
+    for row in rows:
+        try:
+            row["Valor"] = float(str(row["Valor"]).replace(",", "."))
+        except Exception:
+            row["Valor"] = 0.0
+    return rows if rows else []
+
+
 
 def remover_transacao(row_dict):
     all_rows = worksheet.get_all_records()
