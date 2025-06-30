@@ -6,16 +6,17 @@ from google.oauth2.service_account import Credentials
 from pagina_dashboard import pagina_dashboard
 from datetime import date
 
+# Função para normalizar valor de entrada (string -> float seguro BR)
 def normaliza_valor(valor_str):
-    valor_str = valor_str.strip()
-    # Se contém milhar e decimal brasileiro: 1.234,56
+    valor_str = str(valor_str).strip()
+    # Milhar e decimal brasileiro: 1.234,56 -> 1234.56
     if "." in valor_str and "," in valor_str:
         valor_str = valor_str.replace(".", "")  # remove milhar
         valor_str = valor_str.replace(",", ".") # troca decimal
-    # Se só vírgula: 14,98
+    # Só vírgula: 14,98 -> 14.98
     elif "," in valor_str:
         valor_str = valor_str.replace(",", ".")
-    # Se só ponto: já está certo
+    # Só ponto: 14.98 (ok)
     return valor_str
 
 SCOPE = [
@@ -44,11 +45,9 @@ def ler_transacoes():
     return rows if rows else []
 
 def adicionar_transacao(data, descricao, valor, categoria, tipo):
-    # valor aqui já é float!
-    valor_float = float(str(valor).replace(",", "."))
-    valor_final = valor_float if tipo == "Entrada" else -valor_float
+    # valor já é float!
+    valor_final = valor if tipo == "Entrada" else -valor
     worksheet.append_row([str(data), descricao, valor_final, categoria, tipo])
-
 
 def remover_transacao(row_dict):
     all_rows = worksheet.get_all_records()
@@ -63,8 +62,8 @@ def remover_transacao(row_dict):
             cat2 = str(row_dict.get("Categoria")).strip()
             tipo1 = str(row.get("Tipo")).strip()
             tipo2 = str(row_dict.get("Tipo")).strip()
-            val1 = float(str(row.get("Valor")).replace(",", ".").replace(" ", ""))
-            val2 = float(str(row_dict.get("Valor")).replace(",", ".").replace(" ", ""))
+            val1 = float(normaliza_valor(row.get("Valor")))
+            val2 = float(normaliza_valor(row_dict.get("Valor")))
             if (
                 data1 == data2 and
                 desc1 == desc2 and
@@ -78,7 +77,6 @@ def remover_transacao(row_dict):
             continue
     if idx:
         worksheet.delete_rows(idx)
-
 
 def formatar_brl(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -94,10 +92,12 @@ if "pagina" not in st.session_state:
 st.session_state.transacoes = ler_transacoes()
 cols = ["Data", "Descrição", "Valor", "Categoria", "Tipo"]
 df_total = pd.DataFrame(st.session_state.transacoes, columns=cols)
-st.write(df_total["Valor"].head(10))
 
+# Sempre converta o campo Valor lido para float com normalização
+if not df_total.empty:
+    df_total["Valor"] = df_total["Valor"].apply(lambda x: float(normaliza_valor(x)))
 
-valores_numericos = pd.to_numeric(df_total["Valor"], errors="coerce")
+valores_numericos = df_total["Valor"] if not df_total.empty else pd.Series(dtype="float")
 total_entrada = valores_numericos[valores_numericos > 0].sum() if not df_total.empty else 0
 total_saida = valores_numericos[valores_numericos < 0].sum() if not df_total.empty else 0
 saldo = valores_numericos.sum() if not df_total.empty else 0
@@ -154,6 +154,8 @@ with col_dir:
         st.header("📋 Histórico de Transações")
         if st.session_state.transacoes:
             df = pd.DataFrame(st.session_state.transacoes, columns=cols)
+            if not df.empty:
+                df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
             df["Data"] = pd.to_datetime(df["Data"])
             df = df.sort_values(by="Data", ascending=False).reset_index(drop=True)
             busca = st.text_input("🔎 Buscar por descrição ou categoria")
@@ -171,6 +173,8 @@ with col_dir:
             st.info("Nenhuma transação cadastrada para remover.")
         else:
             df = pd.DataFrame(st.session_state.transacoes, columns=cols)
+            if not df.empty:
+                df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
             df["Data"] = pd.to_datetime(df["Data"])
             df = df.sort_values(by="Data", ascending=False).reset_index(drop=True)
             for i, row in df.iterrows():
