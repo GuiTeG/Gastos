@@ -13,11 +13,9 @@ SCOPE = [
 
 # LEITURA SEGURA DAS CREDENCIAIS
 if "google_service_account" in st.secrets:
-    # Se colou o JSON entre ''' ... ''' no secrets, faça:
     try:
         service_account_info = json.loads(st.secrets["google_service_account"])
     except Exception:
-        # Se colou em TOML, já está como dict!
         service_account_info = dict(st.secrets["google_service_account"])
     creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPE)
 else:
@@ -40,16 +38,16 @@ def adicionar_transacao(data, descricao, valor, categoria, tipo):
 def remover_transacao(row_dict):
     all_rows = worksheet.get_all_records()
     idx = None
-    for i, row in enumerate(all_rows, start=2):  # começa em 2 porque 1 é header
+    for i, row in enumerate(all_rows, start=2):  # começa em 2 porque linha 1 é header
         try:
-            data1 = str(row.get("Data"))
-            data2 = str(row_dict.get("Data"))
-            desc1 = str(row.get("Descrição"))
-            desc2 = str(row_dict.get("Descrição"))
-            cat1 = str(row.get("Categoria"))
-            cat2 = str(row_dict.get("Categoria"))
-            tipo1 = str(row.get("Tipo"))
-            tipo2 = str(row_dict.get("Tipo"))
+            data1 = pd.to_datetime(row.get("Data")).date()
+            data2 = pd.to_datetime(row_dict.get("Data")).date()
+            desc1 = str(row.get("Descrição")).strip()
+            desc2 = str(row_dict.get("Descrição")).strip()
+            cat1 = str(row.get("Categoria")).strip()
+            cat2 = str(row_dict.get("Categoria")).strip()
+            tipo1 = str(row.get("Tipo")).strip()
+            tipo2 = str(row_dict.get("Tipo")).strip()
             val1 = float(str(row.get("Valor")).replace(",", "."))
             val2 = float(str(row_dict.get("Valor")).replace(",", "."))
             if (
@@ -57,11 +55,11 @@ def remover_transacao(row_dict):
                 desc1 == desc2 and
                 cat1 == cat2 and
                 tipo1 == tipo2 and
-                val1 == val2
+                abs(val1 - val2) < 0.01
             ):
                 idx = i
                 break
-        except Exception:
+        except Exception as e:
             continue
     if idx:
         worksheet.delete_rows(idx)
