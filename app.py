@@ -4,13 +4,18 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import date
 import plotly.express as px
+import json
 
 # === CONFIGURAÇÃO GOOGLE SHEETS ===
 SCOPE = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
 ]
-creds = Credentials.from_service_account_file('credenciais.json', scopes=SCOPE)
+
+# Lê o json do secret do Streamlit Cloud
+creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
+creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
+
 gc = gspread.authorize(creds)
 SHEET_NAME = 'Controle finanças'
 sheet = gc.open(SHEET_NAME)
@@ -438,3 +443,4 @@ with col_dir:
                         st.table(df_mes[["Data Vencimento", "Descrição", "Valor"]].sort_values("Data Vencimento"))
         else:
             st.info("Nenhuma transação de cartão cadastrada ainda.")
+
