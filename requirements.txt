@@ -1,6 +1,9 @@
 streamlit
-pandas
-plotly
-openpyxl
+streamlit-extras
 gspread
 google-auth
+plotly
+pandas
+requests
+streamlit-option-menu
+streamlit-lottie
