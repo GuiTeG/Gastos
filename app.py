@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import date
 import plotly.express as px
-from pagina_dashboard import dashboard_financeiro
 from streamlit_option_menu import option_menu
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_lottie import st_lottie
@@ -95,7 +94,8 @@ SCOPE = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
 ]
-creds = Credentials.from_service_account_file("credenciais.json", scopes=SCOPE)
+# Para Streamlit Cloud, o segredo vai em st.secrets["google_service_account"]
+creds = Credentials.from_service_account_info(st.secrets["google_service_account"], scopes=SCOPE)
 gc = gspread.authorize(creds)
 SHEET_NAME = 'Controle finanças'
 WORKSHEET_TRANSACOES = 'Transacoes'
@@ -160,6 +160,88 @@ def ler_cartoes():
 def adicionar_cartao(nome, limite, vencimento):
     worksheet_cartoes.append_row([nome, str(limite), str(vencimento)])
 
+# =========== DASHBOARD ===========
+def dashboard_financeiro():
+    df = pd.DataFrame(st.session_state.transacoes)
+    if df.empty:
+        mostra_lottie("https://assets4.lottiefiles.com/packages/lf20_puciaact.json", altura=140)
+        st.info("Nenhuma transação cadastrada para gerar gráficos.")
+        return
+    # Corrigir nome da coluna de data conforme seu app (Data Vencimento ou Data)
+    if "Data" in df.columns:
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+    elif "Data Vencimento" in df.columns:
+        df["Data"] = pd.to_datetime(df["Data Vencimento"], errors="coerce")
+    else:
+        st.warning("Coluna de data não encontrada.")
+        return
+    df = df.dropna(subset=["Data"])  # Remove linhas sem data válida
+    hoje = date.today()
+    mes_atual = hoje.strftime("%Y-%m")
+    df["AnoMes"] = df["Data"].dt.strftime("%Y-%m")
+    df_mes = df[df["AnoMes"] == mes_atual].copy()
+    entradas = df[df["Valor"] > 0]["Valor"].sum()
+    saidas = df[df["Valor"] < 0]["Valor"].sum()
+    saldo_atual = df["Valor"].sum()
+    entrada_mes = df_mes[df_mes["Valor"] > 0]["Valor"].sum()
+    saida_mes = df_mes[df_mes["Valor"] < 0]["Valor"].sum()
+    saldo_mes = df_mes["Valor"].sum()
+    qtd_transacoes = len(df_mes)
+    maior_gasto = df_mes[df_mes["Valor"] < 0]["Valor"].min() if not df_mes[df_mes["Valor"] < 0].empty else 0
+
+    st.markdown("<h1 style='color:#e4002b;'>💸 Dashboard Financeiro</h1>", unsafe_allow_html=True)
+    col_anim, col_kpis = st.columns([1, 3])
+    with col_anim:
+        mostra_lottie("https://assets4.lottiefiles.com/packages/lf20_puciaact.json", altura=130)
+    with col_kpis:
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("Entradas (Mês)", f"R$ {entrada_mes:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        kpi2.metric("Saídas (Mês)", f"R$ {abs(saida_mes):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        kpi3.metric("Saldo Atual", f"R$ {saldo_atual:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        kpi4.metric("Transações", qtd_transacoes)
+        style_metric_cards(
+            background_color="#fffbe7",
+            border_left_color="#e4002b",
+            border_radius_px=18,
+        )
+    st.markdown("---")
+    st.subheader("📈 Evolução do Saldo Acumulado (Mês Atual)")
+    if not df_mes.empty:
+        df_mes_sorted = df_mes.sort_values("Data")
+        df_mes_sorted["Saldo_Acumulado"] = df_mes_sorted["Valor"].cumsum()
+        st.plotly_chart(
+            px.line(
+                df_mes_sorted, x="Data", y="Saldo_Acumulado",
+                markers=True, title="Evolução do Saldo no mês",
+            ),
+            use_container_width=True
+        )
+    st.subheader("🍕 Gastos por Categoria (Mês Atual)")
+    df_gastos = df_mes[df_mes["Valor"] < 0].copy()
+    if not df_gastos.empty:
+        df_gastos["ValorAbs"] = df_gastos["Valor"].abs()
+        st.plotly_chart(
+            px.pie(df_gastos, names="Categoria", values="ValorAbs",
+                   title="Gastos por Categoria"),
+            use_container_width=True
+        )
+    else:
+        st.info("Sem despesas para mostrar pizza.")
+    st.markdown("### Top 5 Maiores Gastos do Mês")
+    top5 = df_gastos.sort_values("ValorAbs", ascending=False).head(5) if not df_gastos.empty else pd.DataFrame()
+    if not top5.empty:
+        st.dataframe(top5[["Data", "Descrição", "Categoria", "ValorAbs"]]
+            .rename(columns={"ValorAbs": "Valor"})
+            .style.format({"Valor": lambda v: f"R$ {abs(v):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')}),
+            use_container_width=True
+        )
+    else:
+        st.info("Não há gastos cadastrados neste mês.")
+    st.markdown("#### Outros Indicadores")
+    colA, colB = st.columns(2)
+    colA.metric("Maior gasto", formatar_brl(maior_gasto))
+    colB.metric("Saldo do mês", formatar_brl(saldo_mes))
+
 # ======================= SIDEBAR ============================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=64)
@@ -191,7 +273,7 @@ if st.session_state.pagina != selecionado:
 
 cols = ["Data Vencimento", "Data Pagamento", "Descrição", "Valor", "Categoria", "Tipo", "Telefone", "Pago"]
 
-# ===================== TELA PRINCIPAL ======================
+# ============= TELAS PRINCIPAIS ==================
 if st.session_state.pagina == "Principal":
     with st.container():
         st.markdown('<div class="main-card">', unsafe_allow_html=True)
@@ -282,41 +364,7 @@ if st.session_state.pagina == "Principal":
 
 # ================= HISTÓRICO =================
 elif st.session_state.pagina == "Histórico":
-    st.markdown("""
-        <style>
-        .transacao-card {
-            background: #fff;
-            border-radius: 14px;
-            box-shadow: 0 1px 8px #e4002b22;
-            padding: 18px 24px;
-            margin-bottom: 24px;
-            border-left: 6px solid #e4002b22;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: box-shadow 0.2s;
-        }
-        .transacao-card.entrada { border-left: 6px solid #24bb4e; }
-        .transacao-card.saida   { border-left: 6px solid #e4002b; }
-        .transacao-chip {
-            display: inline-block;
-            padding: 3px 12px;
-            font-size: 0.97em;
-            background: #f4f4f4;
-            border-radius: 8px;
-            margin-right: 6px;
-            margin-bottom: 2px;
-            color: #555;
-        }
-        .entrada-chip { background:#e6f9ee; color:#119944; font-weight:600;}
-        .saida-chip { background:#ffeaea; color:#d61e1e; font-weight:600;}
-        .valor-entrada { color: #24bb4e; font-weight:600; font-size:1.18em; }
-        .valor-saida   { color: #e4002b; font-weight:600; font-size:1.18em; }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.markdown("## Histórico de Transações")
-
     df = pd.DataFrame(st.session_state.transacoes, columns=cols)
     df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
     df = df.sort_values(by="Data Vencimento", ascending=False).reset_index(drop=True)
@@ -355,29 +403,7 @@ elif st.session_state.pagina == "Histórico":
                 """, unsafe_allow_html=True
             )
 
-
 elif st.session_state.pagina == "Remover":
-    st.markdown("""
-        <style>
-        .remover-card {
-            background: #fff;
-            border-radius: 14px;
-            box-shadow: 0 1px 8px #e4002b22;
-            padding: 14px 24px;
-            margin-bottom: 18px;
-            border-left: 6px solid #e4002b22;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: box-shadow 0.2s;
-        }
-        .remover-card.entrada { border-left: 6px solid #24bb4e; }
-        .remover-card.saida   { border-left: 6px solid #e4002b; }
-        .valor-entrada { color: #24bb4e; font-weight:600; font-size:1.18em; }
-        .valor-saida   { color: #e4002b; font-weight:600; font-size:1.18em; }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.markdown("## Remover Transações em Lote")
     df = pd.DataFrame(st.session_state.transacoes, columns=cols)
     df["Valor"] = df["Valor"].apply(lambda x: float(normaliza_valor(x)))
@@ -393,14 +419,12 @@ elif st.session_state.pagina == "Remover":
         )
         df_filtrado = df_filtrado[mask]
 
-    # Estado dos checkboxes
     if "selecionados_remover" not in st.session_state or len(st.session_state.selecionados_remover) != len(df_filtrado):
         st.session_state.selecionados_remover = [False] * len(df_filtrado)
 
     if df_filtrado.empty:
         st.info("Nenhuma transação encontrada.")
     else:
-        # Botão para selecionar/deselecionar todos
         col_a, col_b = st.columns([1, 2])
         with col_a:
             if st.button("Selecionar Todos"):
@@ -438,7 +462,6 @@ elif st.session_state.pagina == "Remover":
             if not indices_remover:
                 st.warning("Selecione ao menos uma transação para remover.")
             else:
-                # Montar lista de índices reais no df original
                 all_rows = worksheet.get_all_values()[1:]  # Ignora cabeçalho
                 removidos = 0
                 debug_msgs = []
@@ -490,29 +513,11 @@ elif st.session_state.pagina == "Remover":
                 st.session_state.selecionados_remover = []
                 st.rerun()
 
-
 elif st.session_state.pagina == "Dashboard":
-     dashboard_financeiro()
+    dashboard_financeiro()
 
 elif st.session_state.pagina == "Cartões":
-    st.markdown("""
-        <style>
-        .cartao-box {
-            background: #fff;
-            border-radius: 14px;
-            box-shadow: 0 2px 12px #e4002b24;
-            padding: 18px 22px 10px 22px;
-            margin-bottom: 18px;
-        }
-        .limite-label { color: #888; font-size: 0.99em;}
-        .limite-valor { font-size: 1.12em; font-weight: 700;}
-        .venc-label { color: #888; }
-        .cartao-nome { font-size: 1.15em; font-weight: bold; }
-        .fatura-mes { background: #e4002b11; padding:4px 14px; border-radius:8px; font-size: 1.04em; font-weight:600; display:inline-block;}
-        </style>
-    """, unsafe_allow_html=True)
     st.markdown("## 💳 Cartões de Crédito")
-
     st.subheader("Adicionar novo cartão")
     with st.form("form_cartao"):
         col1, col2, col3 = st.columns([4,2,2])
